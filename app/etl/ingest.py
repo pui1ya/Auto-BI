@@ -20,5 +20,5 @@ def ingest_csv(file_path):
         return df
     
 if __name__ == "__main__":
-    df = ingest_csv('/Users/punyashrees/Documents/projects/auto-bi/train.csv')
-    print(df.head())
+    df = ingest_csv('/Users/punyashrees/Documents/projects/auto-bi/Computed insight - Success of active sellers.csv')
+    print(df.info())
