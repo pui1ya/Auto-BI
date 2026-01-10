@@ -19,15 +19,31 @@ def clean_raw_data(df):
 
     columns = list(df.columns)
 
+    #to fill nan
     for col in columns:
         if col not in df.columns:
             continue
 
         if df[col].isna().sum() > 0:
             if df[col].dtype == 'object':
-                df[col] = df[col].fillna(df[col].mode()[0])
+                df[col] = df[col].fillna("Unknown")
             else:
                 df[col] = df[col].fillna(df[col].median())
+
+    #to remove duplicates
+    before = len(df)
+    df = df.drop_duplicates()
+    after = len(df)
+    print(f"Removed {before - after} duplicate rows")
+
+
+    #to change datatype
+    for col in columns:
+        try:
+            df[col] = pd.to_numeric(df[col])
+        except:
+            pass
+
 
     return df
 
