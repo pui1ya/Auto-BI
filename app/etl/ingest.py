@@ -13,12 +13,17 @@ def ingest_csv(file_path):
     if not path.exists():
         return FileNotFoundError(f"{file_path} not found")
     
+    try:
+        return pd.read_csv(file_path, encoding="utf-8")
+    except UnicodeDecodeError:
+        return pd.read_csv(file_path, encoding="latin1")
+    
     df = pd.read_csv(file_path)
     if df.empty:
         return ValueError("dataset is empty")
     else:
         return df
     
-if __name__ == "__main__":
-    df = ingest_csv('/Users/punyashrees/Documents/projects/auto-bi/Computed insight - Success of active sellers.csv')
-    print(df.info())
+# if __name__ == "__main__":
+#     df = ingest_csv('/Users/punyashrees/Documents/projects/auto-bi/Computed insight - Success of active sellers.csv')
+#     print(df.info())
