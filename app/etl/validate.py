@@ -8,7 +8,7 @@ The aim of this file is for value checking and performs the following functions:
 '''
 
 import pandas as pd
-from transform import get_columns
+from app.etl.required import get_columns
 
 def validate_raw_data(df):
 
@@ -32,7 +32,7 @@ def validate_raw_data(df):
 
     duplicates = df.duplicated().sum()
     if duplicates > 0:
-        raise ValueError(f"dataset has {duplicates} rows")
+        raise ValueError(f"dataset has {duplicates} duplicate rows")
 
 
     #for checking columns with negative values
@@ -59,17 +59,17 @@ def validate_raw_data(df):
                .str.replace("_", "")
                .str.replace("-", ""))
     
-    id_cols = {
-        "customer_id" : ["customer", "customerid", "custid", "cust", "id", "client", "clientid", "customerid", "customerid"],
-        "product_id" : ["proid", "item", "itemid", "itemno", "productno", "productid"],
-        "order_id": ["orderid", "ordernumber", "ordernum", "orderno"],
-        "transaction_id" : ["transactionid", "transid"]
-    }
+    # id_cols = {
+    #     "customer_id" : ["customer", "customerid", "custid", "cust", "id", "client", "clientid", "customerid", "customerid"],
+    #     "product_id" : ["proid", "item", "itemid", "itemno", "productno", "productid"],
+    #     "order_id": ["orderid", "ordernumber", "ordernum", "orderno"],
+    #     "transaction_id" : ["transactionid", "transid"]
+    # }
 
-    mapped_cols = get_columns(df, id_cols)
+    # mapped_cols = get_columns(df, id_cols)
 
-    if len(mapped_cols) == 0:
-        raise ValueError(f"{id_cols.keys()} are not present in df")
+    # if len(mapped_cols) == 0:
+    #     raise ValueError(f"{id_cols.keys()} are not present in df")
     
     return True
     

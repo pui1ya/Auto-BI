@@ -7,12 +7,18 @@ transform cleaned data to tables:
 '''
 import pandas as pd
 import numpy as np
+from app.etl.validate import validate_raw_data
+from app.etl.required import get_columns
 
+#splitting the df into sub df
+
+#relevant new df
 customers = pd.DataFrame()
 products = pd.DataFrame()
 orders = pd.DataFrame()
 transactions = pd.DataFrame()
 
+#customer columns
 customer_col = {"customer_id" : ["customer", "customerid", "custid", "cust", "id", "client", "clientid", "customerid", "customerid"],
                 "name" : ["name", "customer_name", "client_name", "customername", "clientname", "cust_name", "cli_name", "custname", "cliname"],
                 "country": ["country", "shipped", "shippedto", "shipped_to_country", "cutomer_country", "cust_country", "client_country"],
@@ -23,18 +29,21 @@ customer_col = {"customer_id" : ["customer", "customerid", "custid", "cust", "id
                 "customer_type" : ["customertype", "segment", "typeofcustomer"]
                 }
 
+#product columns
 products_col = {"product_id" : ["proid", "item", "itemid", "itemno", "productno", "productid"],
                 "product_name" : ["productname", "itemname", "orderitem"],
                 "category" : ["category", "productcategory", "itemcategory", "ordercategory"],
                 "sub_category" : ["subcategory", "productsubcategory", "itemsubcategory", "ordersubcategory"]
                 }
 
+#order columns
 orders_col = {"order_id": ["orderid", "ordernumber", "ordernum", "orderno"],
               "order_date": ["dateoforder", "orderdate", "orderon", "orderedon"],
               "ship_date": ["shipdate", "shippeddate", "dateofshipped", "shippedon", "shipon"],
               "ship_mode": ["shipmode", "shippingmode", 'typeofshipment', "shipmenttype", "modeofshipping", "shippingmode"]
               }
 
+#transaction columns
 transactions_col = {"order_id": ["orderid", "ordernumber", "ordernum", "orderno"],
                     "product_id" : ["proid", "item", "itemid", "itemno", "productno", "productid"],
                     "customer_id" : ["customer", "customerid", "custid", "cust", "id", "client", "clientid", "customerid", "customerid"],
@@ -45,110 +54,127 @@ transactions_col = {"order_id": ["orderid", "ordernumber", "ordernum", "orderno"
                     "transaction_id" : ["transactionid", "transid"]
                     }
 
-def get_columns(df, map):
+#to fetch the relevant columns from df
 
-    new_col = {}
+class table_builder:
 
-    for key, value in map.items():
-        for col in df.columns:
-            if col.lower() in value:
-                new_col[key] = col
-                break
+    def __init__(self, df):
+        self.df = df
+
+    #building customers table
+    def build_customers_table(self):
+
+        new_col = get_columns(self.df, customer_col)
+
+        if "customer_id" not in new_col:
+            raise ValueError("Customer Id not found in df")
     
-    return new_col
+        df_customer_col = list(new_col.values())
+
+        customers = self.df[df_customer_col].copy()
+        customers.columns = list(new_col.keys())
+
+        customers = customers.drop_duplicates()
+        customers = customers.reset_index(drop = True)
+
+        print(customers.head())
+        print(customers.shape)
+
+        return customers
 
 
-def build_customers_table(df):
+#building products table
+    def build_products_table(self):
+        new_col = get_columns(self.df, products_col)
 
-    new_col = get_columns(df, customer_col)
+        if "product_id" not in new_col.keys():
+            raise ValueError("product_id not found in df")
 
-    if "customer_id" not in new_col:
-        raise ValueError("Customer Id not found in df")
+        df_products_col = list(new_col.values())
+        products = self.df[df_products_col].copy()
+        products.columns = list(new_col.keys())
+
+        products = products.drop_duplicates()
+        products = products.reset_index(drop = True)
+
+        print(products.head())
+        print(products.shape)
+
+        return products
+
+
+#building orders table
+    def build_orders_table(self):
+        new_columns = get_columns(self.df, orders_col)
+
+        print(self.df.columns)
+
+        if "order_id" not in new_columns.keys():
+            raise ValueError("order_id not found in df")
+
+        df_order_col = list(new_columns.values())
+
+        orders = self.df[df_order_col].copy()
+        orders.columns = list(new_columns.keys())
+
+        orders = orders.drop_duplicates()
+        orders = orders.reset_index(drop = True)
+
+        print(orders.head())
+        print(orders.shape)
+
+        return orders
+
+
+#building transactions table
+    def build_transactions_table(self):
+        new_cols = get_columns(self.df, transactions_col)
+
+        required = ["order_id", "product_id", "customer_id"]
+        missing = [r for r in required if r not in new_cols]
+
+        if missing:
+            raise ValueError(f"Missing required columns: {missing}")
+
     
-    df_customer_col = list(new_col.values())
+        df_transaction_cols = list(new_cols.values())
 
-    customers = df[df_customer_col].copy()
-    customers.columns = list(new_col.keys())
+        transactions = self.df[df_transaction_cols].copy()
+        transactions.columns = list(new_cols.keys())
 
-    customers = customers.drop_duplicates()
-    customers = customers.reset_index(drop = True)
+        transactions = transactions.drop_duplicates()
+        transactions = transactions.reset_index(drop = True)
 
-    return customers
+        print(transactions.head())
+        print(transactions.shape)
 
-
-def build_products_table(df):
-    new_col = get_columns(df, products_col)
-
-    if "product_id" not in new_col.keys():
-        raise ValueError("product_id not found in df")
-
-    df_products_col = list(new_col.values())
-    products = df[df_products_col].copy()
-    products.columns = list(new_col.keys())
-
-    products = products.drop_duplicates()
-    products = products.reset_index(drop = True)
-
-    return products
-
-
-def build_orders_table(df):
-    new_columns = get_columns(df, orders_col)
-
-    if "order_id" not in new_columns.keys():
-        raise ValueError("order_id not found in df")
-
-    df_order_col = list(new_columns.values())
-
-    orders = df[df_order_col].copy()
-    orders.columns = list(new_columns.keys())
-
-    orders = orders.drop_duplicates()
-    orders = orders.reset_index(drop = True)
-
-    return orders
-
-
-def build_transactions_table(df):
-    new_cols = get_columns(df, transactions_col)
-
-    required = ["order_id", "product_id", "customer_id"]
-    missing = [r for r in required if r not in new_cols]
-
-    if missing:
-        raise ValueError(f"Missing required columns: {missing}")
-
-    
-    df_transaction_cols = list(new_cols.values())
-
-    transactions = df[df_transaction_cols].copy()
-    transactions.columns = list(new_cols.keys())
-
-    transactions = transactions.drop_duplicates()
-    transactions = transactions.reset_index(drop = True)
-
-    return transactions
+        return transactions
     
 
-if __name__ == "__main__":
-    from clean import clean_raw_data
-    from ingest import ingest_csv
+# #main function for testing
+# def building_tables(df):
+#     from app.etl.clean import clean_raw_data
+#     from app.etl.ingest import ingest_csv
 
-    df = ingest_csv("/Users/punyashrees/Documents/projects/auto-bi/Sample - Superstore.csv")
-    df = clean_raw_data(df)
+#     df = ingest_csv("/Users/punyashrees/Documents/projects/auto-bi/Sample - Superstore.csv")
+#     df = clean_raw_data(df)
 
-    customers = build_customers_table(df)
-    print(customers.head())
-    print(customers.shape)
+#     builder = table_builder(df)
 
-    products = build_products_table(df)
-    print(products.head())
-    print(products.shape)
+#     customers = builder.build_customers_table(df)
+#     print(customers.head())
+#     print(customers.shape)
 
-    orders = build_orders_table(df)
-    print(orders.head())
-    print(orders.shape)
+#     products = builder.build_products_table(df)
+#     print(products.head())
+#     print(products.shape)
 
-    transactions = build_transactions_table(df)
-    print(transactions.head())
-    print(transactions.shape)
+#     orders = builder.build_orders_table(df)
+#     print(orders.head())
+#     print(orders.shape)
+
+#     transactions = builder.build_transactions_table(df)
+#     print(transactions.head())
+#     print(transactions.shape)
+
+    

@@ -47,8 +47,8 @@ def clean_raw_data(df):
 
     return df
 
-if __name__ == "__main__":
-    from ingest import ingest_csv
-    df = ingest_csv("/Users/punyashrees/Documents/projects/auto-bi/Computed insight - Success of active sellers.csv")
-    clean_df = clean_raw_data(df)
-    print(clean_df.info())
+# if __name__ == "__main__":
+#     from ingest import ingest_csv
+#     df = ingest_csv("/Users/punyashrees/Documents/projects/auto-bi/Computed insight - Success of active sellers.csv")
+#     clean_df = clean_raw_data(df)
+#     print(clean_df.info())
