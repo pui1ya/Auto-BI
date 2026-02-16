@@ -36,7 +36,7 @@ def rolling_average_forecast(ts, window=7, periods=7):
 
     ts["rolling_mean"] = ts.iloc[:, 0].rolling(window).mean()
 
-    last_value = ts["rolling_mean"].iloc[-1]
+    last_value = ts["rolling_mean"].dropna().iloc[-1]
 
     #to generate future dates
     future_dates = pd.date_range(

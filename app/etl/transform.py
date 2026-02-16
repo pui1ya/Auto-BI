@@ -19,7 +19,7 @@ orders = pd.DataFrame()
 transactions = pd.DataFrame()
 
 #customer columns
-customer_col = {"customer_id" : ["customer", "customerid", "custid", "cust", "id", "client", "clientid", "customerid", "customerid"],
+customer_col = {"customer_id" : ["customer_id", "customer", "customerid", "custid", "cust", "id", "client", "clientid", "customerid", "customerid"],
                 "name" : ["name", "customer_name", "client_name", "customername", "clientname", "cust_name", "cli_name", "custname", "cliname"],
                 "country": ["country", "shipped", "shippedto", "shipped_to_country", "cutomer_country", "cust_country", "client_country"],
                 "state" : ["state", "customer_state", "customerstate", "client_state", "clientstate"],
@@ -30,7 +30,7 @@ customer_col = {"customer_id" : ["customer", "customerid", "custid", "cust", "id
                 }
 
 #product columns
-products_col = {"product_id" : ["proid", "item", "itemid", "itemno", "productno", "productid"],
+products_col = {"product_id" : ["product_id", "proid", "item", "itemid", "itemno", "productno", "productid"],
                 "product_name" : ["productname", "itemname", "orderitem"],
                 "category" : ["category", "productcategory", "itemcategory", "ordercategory"],
                 "sub_category" : ["subcategory", "productsubcategory", "itemsubcategory", "ordersubcategory"]
@@ -116,6 +116,9 @@ class table_builder:
 
         orders = self.df[df_order_col].copy()
         orders.columns = list(new_columns.keys())
+
+        orders['order_date'] = pd.to_datetime(orders['order_date'])
+        orders['ship_date'] = pd.to_datetime(orders['ship_date'])
 
         orders = orders.drop_duplicates()
         orders = orders.reset_index(drop = True)

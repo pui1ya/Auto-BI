@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT))
 
 import pandas as pd
+import numpy as np
 
 #for returning total revenue, total order and average of those for the day
 def compute_daily_revenue(transactions, orders):
@@ -25,7 +26,7 @@ def compute_daily_revenue(transactions, orders):
     .reset_index()
     )
 
-    daily_revenue['average_sold_value'] = (daily_revenue['total_sales']/daily_revenue['items_sold'])
+    daily_revenue['average_sold_value'] = (daily_revenue['total_sales']/daily_revenue['items_sold']).replace([np.inf, -np.inf], 0)
 
     return daily_revenue
 

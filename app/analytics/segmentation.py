@@ -87,3 +87,4 @@ if __name__ == "__main__":
 
     print("\nRFM Segmentation Sample:\n")
     print(rfm_df.head())
+    print(rfm_df.columns)
