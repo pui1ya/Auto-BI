@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Auto BI</title>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+
+<!-- Plotly -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
+
+<style>
+/* ── Reset & Variables ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #07080d;
+  --surface:  #0f1117;
+  --surface2: #161821;
+  --border:   #1e2030;
+  --border2:  #2a2d3e;
+  --text:     #e4e6f0;
+  --muted:    #5a5f7a;
+  --accent:   #6ee7b7;
+  --accent2:  #818cf8;
+  --danger:   #f87171;
+  --warn:     #fbbf24;
+  --info:     #38bdf8;
+  --font:     'Syne', sans-serif;
+  --mono:     'DM Mono', monospace;
+  --sidebar:  220px;
+  --radius:   10px;
+}
+
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
+
+/* ── Layout ────────────────────────────────────────────────────── */
+#shell { display: flex; height: 100vh; }
+
+/* ── Sidebar ───────────────────────────────────────────────────── */
+#sidebar {
+  width: var(--sidebar);
+  min-width: var(--sidebar);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.sb-logo {
+  padding: 24px 20px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.sb-logo .mark {
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--accent);
+}
+.sb-logo .tagline {
+  font-size: 0.65rem;
+  font-family: var(--mono);
+  color: var(--muted);
+  margin-top: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+nav { flex: 1; padding: 12px 0; overflow-y: auto; }
+nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+  transition: all 0.15s;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+nav a:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+nav a.active { color: var(--accent); border-left-color: var(--accent); background: rgba(110,231,183,0.06); }
+nav a .icon { font-size: 1rem; width: 20px; text-align: center; }
+
+.sb-bottom {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+}
+.api-status {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: background 0.3s;
+}
+.status-dot.ok { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.status-dot.err { background: var(--danger); }
+
+/* ── Main ──────────────────────────────────────────────────────── */
+#main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Topbar ────────────────────────────────────────────────────── */
+#topbar {
+  height: 56px;
+  min-height: 56px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+}
+#topbar .page-title {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+#topbar .actions { display: flex; gap: 10px; align-items: center; }
+
+/* ── Content ───────────────────────────────────────────────────── */
+#content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px;
+}
+#content::-webkit-scrollbar { width: 4px; }
+#content::-webkit-scrollbar-track { background: transparent; }
+#content::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* ── Pages ─────────────────────────────────────────────────────── */
+.page { display: none; animation: fadeUp 0.25s ease; }
+.page.active { display: block; }
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── KPI Cards ─────────────────────────────────────────────────── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.kpi-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.kpi-card:hover { border-color: var(--border2); }
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+}
+.kpi-label {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.kpi-value {
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  line-height: 1;
+}
+.kpi-delta {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  margin-top: 6px;
+}
+.kpi-delta.pos { color: var(--accent); }
+.kpi-delta.neg { color: var(--danger); }
+
+/* ── Chart Cards ───────────────────────────────────────────────── */
+.chart-grid {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.chart-grid.col2 { grid-template-columns: 1fr 1fr; }
+.chart-grid.col3 { grid-template-columns: 1fr 1fr 1fr; }
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+.chart-card.full { grid-column: 1 / -1; }
+.chart-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+/* ── Tables ────────────────────────────────────────────────────── */
+.table-wrap {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+thead tr {
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+thead th {
+  padding: 10px 14px;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+tbody tr:hover { background: rgba(255,255,255,0.02); }
+tbody tr:last-child { border-bottom: none; }
+tbody td {
+  padding: 9px 14px;
+  color: var(--text);
+  font-family: var(--mono);
+}
+td.mono { font-family: var(--mono); color: var(--muted); }
+
+/* ── Badges ────────────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-family: var(--mono);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.badge-champions  { background: rgba(110,231,183,0.15); color: var(--accent); }
+.badge-loyal      { background: rgba(129,140,248,0.15); color: var(--accent2); }
+.badge-at-risk    { background: rgba(251,191,36,0.15);  color: var(--warn); }
+.badge-lost       { background: rgba(248,113,113,0.15); color: var(--danger); }
+.badge-critical   { background: rgba(248,113,113,0.15); color: var(--danger); }
+.badge-warning    { background: rgba(251,191,36,0.15);  color: var(--warn); }
+.badge-info       { background: rgba(56,189,248,0.15);  color: var(--info); }
+
+/* ── Insight Cards ─────────────────────────────────────────────── */
+.insight-list { display: flex; flex-direction: column; gap: 10px; }
+.insight-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  border-left: 3px solid var(--border2);
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.insight-card.critical { border-left-color: var(--danger); }
+.insight-card.warning  { border-left-color: var(--warn); }
+.insight-card.info     { border-left-color: var(--accent); }
+.insight-icon { font-size: 1.1rem; margin-top: 1px; flex-shrink: 0; }
+.insight-title { font-size: 0.85rem; font-weight: 700; margin-bottom: 4px; }
+.insight-body  { font-size: 0.78rem; color: var(--muted); line-height: 1.5; }
+
+/* ── Buttons ───────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 7px;
+  font-family: var(--font);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.btn-primary {
+  background: var(--accent);
+  color: #07080d;
+}
+.btn-primary:hover { background: #a7f3d0; }
+.btn-ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border2);
+}
+.btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Period Slider ─────────────────────────────────────────────── */
+.slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  margin-bottom: 20px;
+}
+.slider-wrap label {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.slider-wrap input[type=range] {
+  flex: 1;
+  accent-color: var(--accent);
+  height: 3px;
+}
+.slider-val {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--accent);
+  width: 52px;
+  text-align: right;
+}
+
+/* ── Upload zone ───────────────────────────────────────────────── */
+.upload-zone {
+  border: 2px dashed var(--border2);
+  border-radius: var(--radius);
+  padding: 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--surface);
+  margin-bottom: 20px;
+}
+.upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: rgba(110,231,183,0.03); }
+.upload-zone .upload-icon { font-size: 2.5rem; margin-bottom: 10px; }
+.upload-zone p { font-size: 0.82rem; color: var(--muted); }
+.upload-zone strong { color: var(--text); }
+#fileInput { display: none; }
+
+/* ── Progress / Log ────────────────────────────────────────────── */
+.log-box {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.8;
+}
+.log-box .ok   { color: var(--accent); }
+.log-box .err  { color: var(--danger); }
+.log-box .warn { color: var(--warn); }
+
+/* ── Skeleton loader ───────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 6px;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ── Churn meter ───────────────────────────────────────────────── */
+.churn-ring-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px 0;
+}
+svg.ring text { font-family: var(--font); }
+
+/* ── Forecast legend ───────────────────────────────────────────── */
+.legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+/* ── Section header ────────────────────────────────────────────── */
+.section-head {
+  font-size: 0.65rem;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin: 24px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Alert banner ──────────────────────────────────────────────── */
+.alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  margin-bottom: 10px;
+}
+.alert-banner.critical { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.25); }
+.alert-banner.warning  { background: rgba(251,191,36,0.1);  border: 1px solid rgba(251,191,36,0.25); }
+.alert-banner .alert-msg { flex: 1; }
+.alert-banner .alert-type {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ── Toast ─────────────────────────────────────────────────────── */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  font-size: 0.8rem;
+  z-index: 9999;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: all 0.25s;
+  pointer-events: none;
+  max-width: 320px;
+}
+#toast.show { opacity: 1; transform: translateY(0); }
+#toast.ok   { border-left: 3px solid var(--accent); }
+#toast.err  { border-left: 3px solid var(--danger); }
+
+/* ── Plotly overrides ──────────────────────────────────────────── */
+.js-plotly-plot .plotly .modebar { display: none !important; }
+
+/* ── Scrollbar global ──────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+
+<div id="shell">
+
+  <!-- ── Sidebar ── -->
+  <aside id="sidebar">
+    <div class="sb-logo">
+      <div class="mark">Auto BI</div>
+      <div class="tagline">Data → Decisions</div>
+    </div>
+
+    <nav>
+      <a class="active" data-page="overview">
+        <span class="icon">◈</span> Overview
+      </a>
+      <a data-page="forecast">
+        <span class="icon">⌲</span> Forecast
+      </a>
+      <a data-page="segments">
+        <span class="icon">⬡</span> Segments
+      </a>
+      <a data-page="churn">
+        <span class="icon">⚠</span> Churn
+      </a>
+      <a data-page="insights">
+        <span class="icon">✦</span> Insights
+      </a>
+      <a data-page="basket">
+        <span class="icon">⊞</span> Basket Analysis
+      </a>
+      <a data-page="etl">
+        <span class="icon">⇅</span> ETL & Refresh
+      </a>
+    </nav>
+
+    <div class="sb-bottom">
+      <div class="api-status">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">Connecting…</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <div id="main">
+
+    <!-- Topbar -->
+    <div id="topbar">
+      <div class="page-title" id="topbarTitle">Overview</div>
+      <div class="actions">
+        <button class="btn btn-ghost" id="refreshBtn" onclick="refreshAllPages()">↺ Refresh All</button>
+      </div>
+    </div>
+
+    <!-- Pages -->
+    <div id="content">
+
+      <!-- ══ OVERVIEW ══ -->
+      <div class="page active" id="page-overview">
+        <div class="slider-wrap">
+          <label>KPI Period</label>
+          <input type="range" id="periodSlider" min="7" max="180" value="30" oninput="onPeriodChange(this.value)"/>
+          <div class="slider-val" id="periodVal">30 days</div>
+        </div>
+
+        <div class="kpi-grid" id="kpiGrid">
+          <div class="kpi-card skeleton" style="height:90px"></div>
+          <div class="kpi-card skeleton" style="height:90px"></div>
+          <div class="kpi-card skeleton" style="height:90px"></div>
+          <div class="kpi-card skeleton" style="height:90px"></div>
+        </div>
+
+        <div class="chart-grid" style="grid-template-columns:1fr">
+          <div class="chart-card full">
+            <div class="chart-title">Revenue Over Time</div>
+            <div id="chartRevDay" style="height:240px"></div>
+          </div>
+        </div>
+
+        <div class="chart-grid col2">
+          <div class="chart-card">
+            <div class="chart-title">By Category</div>
+            <div id="chartCat" style="height:220px"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">By Region</div>
+            <div id="chartReg" style="height:220px"></div>
+          </div>
+        </div>
+
+        <div class="chart-grid" style="grid-template-columns:1fr">
+          <div class="chart-card full">
+            <div class="chart-title">By Channel</div>
+            <div id="chartChan" style="height:200px"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ FORECAST ══ -->
+      <div class="page" id="page-forecast">
+        <div class="slider-wrap">
+          <label>Horizon</label>
+          <input type="range" id="horizonSlider" min="7" max="90" value="30" oninput="onHorizonChange(this.value)"/>
+          <div class="slider-val" id="horizonVal">30 days</div>
+        </div>
+        <div class="chart-card full">
+          <div class="chart-title">Revenue Forecast</div>
+          <div class="legend">
+            <div class="legend-item"><div class="legend-dot" style="background:#6ee7b7"></div>Historical</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#818cf8"></div>Forecast</div>
+            <div class="legend-item"><div class="legend-dot" style="background:rgba(129,140,248,0.3)"></div>Confidence Band</div>
+          </div>
+          <div id="chartForecast" style="height:320px; margin-top:10px"></div>
+        </div>
+        <div class="section-head" style="margin-top:24px">Forecast Table</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Predicted</th><th>Lower</th><th>Upper</th></tr></thead>
+            <tbody id="forecastTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ══ SEGMENTS ══ -->
+      <div class="page" id="page-segments">
+        <div class="chart-grid col2">
+          <div class="chart-card">
+            <div class="chart-title">Customers by Segment</div>
+            <div id="chartSegPie" style="height:240px"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Revenue by Segment</div>
+            <div id="chartSegBar" style="height:240px"></div>
+          </div>
+        </div>
+
+        <div class="section-head">Segment Summary</div>
+        <div class="table-wrap" style="margin-bottom:20px">
+          <table>
+            <thead><tr><th>Segment</th><th>Customers</th><th>Avg Recency (d)</th><th>Avg Frequency</th><th>Avg Spend</th><th>Total Revenue</th></tr></thead>
+            <tbody id="segSummaryTable"></tbody>
+          </table>
+        </div>
+
+        <div class="section-head">RFM Scatter — Recency vs Monetary</div>
+        <div class="chart-card">
+          <div id="chartRFM" style="height:300px"></div>
+        </div>
+      </div>
+
+      <!-- ══ CHURN ══ -->
+      <div class="page" id="page-churn">
+        <div class="kpi-grid" id="churnKpis">
+          <div class="kpi-card skeleton" style="height:90px"></div>
+          <div class="kpi-card skeleton" style="height:90px"></div>
+          <div class="kpi-card skeleton" style="height:90px"></div>
+        </div>
+        <div class="chart-grid col2">
+          <div class="chart-card">
+            <div class="chart-title">Churn Score Distribution</div>
+            <div id="chartChurnHist" style="height:240px"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Risk Breakdown</div>
+            <div id="chartChurnPie" style="height:240px"></div>
+          </div>
+        </div>
+        <div class="section-head">High Risk Customers</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Customer</th><th>Recency (d)</th><th>Orders</th><th>Spend</th><th>Churn Score</th><th>Segment</th></tr></thead>
+            <tbody id="churnTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ══ INSIGHTS ══ -->
+      <div class="page" id="page-insights">
+        <div style="display:flex; gap:10px; margin-bottom:20px; align-items:center">
+          <button class="btn btn-primary" onclick="regenerateInsights()">✦ Regenerate Insights</button>
+          <button class="btn btn-ghost" onclick="checkAlerts()">⚡ Check Alerts</button>
+        </div>
+
+        <div class="section-head">Generated Insights</div>
+        <div class="insight-list" id="insightList">
+          <div class="skeleton" style="height:70px; border-radius:10px"></div>
+          <div class="skeleton" style="height:70px; border-radius:10px"></div>
+        </div>
+
+        <div class="section-head" style="margin-top:28px">Active Alerts</div>
+        <div id="alertList"></div>
+      </div>
+
+      <!-- ══ BASKET ══ -->
+      <div class="page" id="page-basket">
+        <div class="chart-card" style="margin-bottom:20px">
+          <div class="chart-title">Support vs Confidence (bubble = lift)</div>
+          <div id="chartBasket" style="height:300px"></div>
+        </div>
+        <div class="section-head">Association Rules</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>If Bought</th><th>Also Buys</th><th>Support</th><th>Confidence</th><th>Lift</th></tr></thead>
+            <tbody id="basketTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ══ ETL ══ -->
+      <div class="page" id="page-etl">
+        <div class="section-head">Upload New Data</div>
+        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()"
+             ondragover="event.preventDefault(); this.classList.add('drag')"
+             ondragleave="this.classList.remove('drag')"
+             ondrop="handleDrop(event)">
+          <div class="upload-icon">⇡</div>
+          <p><strong>Click or drag &amp; drop</strong></p>
+          <p style="margin-top:6px">CSV, JSON, XLSX — max 200 MB</p>
+          <p id="uploadedFileName" style="margin-top:10px; color: var(--accent); font-family: var(--mono); font-size:0.75rem"></p>
+        </div>
+        <input type="file" id="fileInput" accept=".csv,.json,.xlsx,.xls" onchange="handleFileSelect(this)"/>
+
+        <div class="section-head">Pipeline</div>
+        <div style="display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="runPipeline()">▶ Run Full Pipeline</button>
+          <button class="btn btn-ghost" onclick="generateSample()">⊞ Generate Sample Data</button>
+        </div>
+
+        <div class="log-box" id="etlLog">Waiting for pipeline run…</div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /shell -->
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────
+const API = 'http://localhost:8000';
+
+// ── Plotly base layout ───────────────────────────────────────────────
+const BASE_LAYOUT = {
+  paper_bgcolor: 'rgba(0,0,0,0)',
+  plot_bgcolor:  'rgba(0,0,0,0)',
+  font:          { family: "'DM Mono', monospace", color: '#5a5f7a', size: 11 },
+  margin:        { t: 10, r: 10, b: 40, l: 50 },
+  xaxis:         { gridcolor: '#1e2030', linecolor: '#1e2030', tickcolor: '#1e2030' },
+  yaxis:         { gridcolor: '#1e2030', linecolor: '#1e2030', tickcolor: '#1e2030' },
+  legend:        { bgcolor: 'rgba(0,0,0,0)', font: { color: '#5a5f7a' } },
+  colorway:      ['#6ee7b7','#818cf8','#fbbf24','#f87171','#38bdf8','#fb7185'],
+};
+const PCONF = { displayModeBar: false, responsive: true };
+
+function layout(overrides={}) {
+  return Object.assign({}, BASE_LAYOUT, overrides,
+    overrides.xaxis ? { xaxis: Object.assign({}, BASE_LAYOUT.xaxis, overrides.xaxis) } : {},
+    overrides.yaxis ? { yaxis: Object.assign({}, BASE_LAYOUT.yaxis, overrides.yaxis) } : {}
+  );
+}
+
+// ── Utilities ────────────────────────────────────────────────────────
+async function api(path) {
+  const r = await fetch(API + path);
+  if (!r.ok) throw new Error(`API ${path} → ${r.status}`);
+  return r.json();
+}
+async function apiPost(path, body={}) {
+  const r = await fetch(API + path, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(`API POST ${path} → ${r.status}`);
+  return r.json();
+}
+
+function fmt(n, prefix='$') {
+  if (n == null || isNaN(n)) return '—';
+  if (Math.abs(n) >= 1e6) return prefix + (n/1e6).toFixed(1) + 'M';
+  if (Math.abs(n) >= 1e3) return prefix + (n/1e3).toFixed(1) + 'K';
+  return prefix + parseFloat(n).toFixed(2);
+}
+function fmtN(n) {
+  if (n == null || isNaN(n)) return '—';
+  return parseFloat(n).toLocaleString();
+}
+function pct(n) { return (n >= 0 ? '+' : '') + parseFloat(n).toFixed(1) + '%'; }
+
+let toastTimer;
+function toast(msg, type='ok') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = '', 3000);
+}
+
+function log(msg, cls='') {
+  const box = document.getElementById('etlLog');
+  box.innerHTML += `<div class="${cls}">${msg}</div>`;
+  box.scrollTop = box.scrollHeight;
+}
+
+// ── API Status ───────────────────────────────────────────────────────
+async function checkApiStatus() {
+  try {
+    await api('/health');
+    document.getElementById('statusDot').className = 'status-dot ok';
+    document.getElementById('statusText').textContent = 'API connected';
+  } catch {
+    document.getElementById('statusDot').className = 'status-dot err';
+    document.getElementById('statusText').textContent = 'API offline';
+  }
+}
+
+// ── Navigation ───────────────────────────────────────────────────────
+const PAGE_TITLES = {
+  overview: 'Overview', forecast: 'Forecast', segments: 'Segments',
+  churn: 'Churn', insights: 'Insights', basket: 'Basket Analysis', etl: 'ETL & Refresh'
+};
+let currentPage = 'overview';
+let pageLoaded = {};
+
+document.querySelectorAll('nav a').forEach(a => {
+  a.addEventListener('click', () => {
+    const p = a.dataset.page;
+    document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
+    a.classList.add('active');
+    document.getElementById('page-' + p).classList.add('active');
+    document.getElementById('topbarTitle').textContent = PAGE_TITLES[p];
+    currentPage = p;
+    if (!pageLoaded[p]) { loadPage(p); pageLoaded[p] = true; }
+  });
+});
+
+function refreshCurrentPage() {
+  pageLoaded[currentPage] = false;
+  loadPage(currentPage);
+  pageLoaded[currentPage] = true;
+}
+
+function refreshAllPages() {
+  pageLoaded = {};
+  loadPage(currentPage);
+  pageLoaded[currentPage] = true;
+  toast('All data refreshed ✓', 'ok');
+}
+
+function loadPage(p) {
+  if (p === 'overview')  loadOverview();
+  if (p === 'forecast')  loadForecast();
+  if (p === 'segments')  loadSegments();
+  if (p === 'churn')     loadChurn();
+  if (p === 'insights')  loadInsights();
+  if (p === 'basket')    loadBasket();
+}
+
+// ── OVERVIEW ─────────────────────────────────────────────────────────
+let overviewPeriod = 30;
+
+function onPeriodChange(v) {
+  overviewPeriod = parseInt(v);
+  document.getElementById('periodVal').textContent = v + ' days';
+  pageLoaded['overview'] = false;
+  loadOverview();
+  pageLoaded['overview'] = true;
+}
+
+async function loadOverview() {
+  try {
+    const [kpis, revDay, revCat, revReg, revChan] = await Promise.all([
+      api(`/metrics/kpis?period_days=${overviewPeriod}`),
+      api('/metrics/revenue-by-day'),
+      api('/metrics/revenue-by-category'),
+      api('/metrics/revenue-by-region'),
+      api('/metrics/revenue-by-channel'),
+    ]);
+
+    // KPI cards
+    const g = document.getElementById('kpiGrid');
+    const deltaClass = kpis.revenue_growth >= 0 ? 'pos' : 'neg';
+    g.innerHTML = `
+      <div class="kpi-card">
+        <div class="kpi-label">Total Revenue</div>
+        <div class="kpi-value">${fmt(kpis.total_revenue)}</div>
+        <div class="kpi-delta ${deltaClass}">${pct(kpis.revenue_growth)} vs prev period</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Orders</div>
+        <div class="kpi-value">${fmtN(kpis.total_orders)}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Unique Customers</div>
+        <div class="kpi-value">${fmtN(kpis.unique_customers)}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Avg Order Value</div>
+        <div class="kpi-value">${fmt(kpis.avg_order_value)}</div>
+      </div>
+    `;
+
+    // Revenue over time
+    const dates = revDay.map(r => r.ds);
+    const vals  = revDay.map(r => r.y);
+    Plotly.react('chartRevDay', [{
+      x: dates, y: vals, type: 'scatter', mode: 'lines',
+      fill: 'tozeroy',
+      line: { color: '#6ee7b7', width: 2 },
+      fillcolor: 'rgba(110,231,183,0.08)',
+    }], layout({ margin: { t:10, r:10, b:36, l:60 } }), PCONF);
+
+    // Category bar
+    Plotly.react('chartCat', [{
+      x: revCat.map(r => r.revenue), y: revCat.map(r => r.category),
+      type: 'bar', orientation: 'h',
+      marker: { color: revCat.map((_, i) => `hsl(${160 + i*28},60%,65%)`) },
+    }], layout({ margin: { t:10, r:10, b:30, l:90 } }), PCONF);
+
+    // Region pie
+    Plotly.react('chartReg', [{
+      values: revReg.map(r => r.revenue),
+      labels: revReg.map(r => r.region),
+      type: 'pie', hole: 0.45,
+      marker: { colors: ['#6ee7b7','#818cf8','#fbbf24','#f87171'] },
+      textfont: { color: '#e4e6f0', size: 11 },
+    }], layout({ margin: { t:10, r:10, b:10, l:10 } }), PCONF);
+
+    // Channel bar
+    Plotly.react('chartChan', [{
+      x: revChan.map(r => r.channel),
+      y: revChan.map(r => r.revenue),
+      type: 'bar',
+      marker: { color: ['#6ee7b7','#818cf8','#fbbf24'] },
+    }], layout({ margin: { t:10, r:10, b:36, l:60 } }), PCONF);
+
+  } catch(e) {
+    toast('Overview load failed: ' + e.message, 'err');
+  }
+}
+
+// ── FORECAST ─────────────────────────────────────────────────────────
+let forecastHorizon = 30;
+
+function onHorizonChange(v) {
+  forecastHorizon = parseInt(v);
+  document.getElementById('horizonVal').textContent = v + ' days';
+  pageLoaded['forecast'] = false;
+  loadForecast();
+  pageLoaded['forecast'] = true;
+}
+
+async function loadForecast() {
+  try {
+    const [hist, fc] = await Promise.all([
+      api('/metrics/revenue-by-day'),
+      api(`/forecasts/revenue?horizon=${forecastHorizon}`),
+    ]);
+
+    if (!fc.length) {
+      document.getElementById('chartForecast').innerHTML =
+        '<p style="color:var(--muted);padding:40px;text-align:center">Not enough data to forecast.</p>';
+      return;
+    }
+
+    const traces = [
+      {
+        x: hist.map(r => r.ds), y: hist.map(r => r.y),
+        type: 'scatter', mode: 'lines', name: 'Historical',
+        line: { color: '#6ee7b7', width: 2 },
+      },
+      {
+        x: fc.map(r => r.date), y: fc.map(r => r.predicted),
+        type: 'scatter', mode: 'lines', name: 'Forecast',
+        line: { color: '#818cf8', width: 2, dash: 'dot' },
+      },
+      {
+        x: [...fc.map(r => r.date), ...fc.map(r => r.date).reverse()],
+        y: [...fc.map(r => r.upper), ...fc.map(r => r.lower).reverse()],
+        type: 'scatter', fill: 'toself', name: 'Confidence',
+        fillcolor: 'rgba(129,140,248,0.1)',
+        line: { color: 'rgba(0,0,0,0)' },
+      },
+    ];
+    Plotly.react('chartForecast', traces, layout(), PCONF);
+
+    // Table
+    const tbody = document.getElementById('forecastTable');
+    tbody.innerHTML = fc.map(r => `
+      <tr>
+        <td class="mono">${r.date}</td>
+        <td>${fmt(r.predicted)}</td>
+        <td style="color:var(--muted)">${fmt(r.lower)}</td>
+        <td style="color:var(--muted)">${fmt(r.upper)}</td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    toast('Forecast load failed: ' + e.message, 'err');
+  }
+}
+
+// ── SEGMENTS ──────────────────────────────────────────────────────────
+const SEG_COLORS = { Champions: '#6ee7b7', 'Loyal Customers': '#818cf8', 'At Risk': '#fbbf24', Lost: '#f87171' };
+const SEG_BADGE  = { Champions: 'badge-champions', 'Loyal Customers': 'badge-loyal', 'At Risk': 'badge-at-risk', Lost: 'badge-lost' };
+
+async function loadSegments() {
+  try {
+    const [summ, rfm] = await Promise.all([
+      api('/segments/summary'),
+      api('/segments/rfm'),
+    ]);
+
+    // Pie
+    Plotly.react('chartSegPie', [{
+      values: summ.map(r => r.customer_count),
+      labels: summ.map(r => r.segment),
+      type: 'pie', hole: 0.45,
+      marker: { colors: summ.map(r => SEG_COLORS[r.segment] || '#5a5f7a') },
+      textfont: { color: '#e4e6f0', size: 11 },
+    }], layout({ margin: { t:10, r:10, b:10, l:10 } }), PCONF);
+
+    // Bar
+    Plotly.react('chartSegBar', [{
+      x: summ.map(r => r.segment),
+      y: summ.map(r => r.total_revenue),
+      type: 'bar',
+      marker: { color: summ.map(r => SEG_COLORS[r.segment] || '#5a5f7a') },
+    }], layout({ margin: { t:10, r:10, b:40, l:60 } }), PCONF);
+
+    // Summary table
+    document.getElementById('segSummaryTable').innerHTML = summ.map(r => `
+      <tr>
+        <td><span class="badge ${SEG_BADGE[r.segment] || ''}">${r.segment}</span></td>
+        <td>${fmtN(r.customer_count)}</td>
+        <td>${r.avg_recency?.toFixed(0) ?? '—'}</td>
+        <td>${r.avg_frequency?.toFixed(1) ?? '—'}</td>
+        <td>${fmt(r.avg_monetary)}</td>
+        <td>${fmt(r.total_revenue)}</td>
+      </tr>
+    `).join('');
+
+    // RFM scatter
+    const segs = [...new Set(rfm.map(r => r.segment))];
+    const scatTraces = segs.map(seg => {
+      const pts = rfm.filter(r => r.segment === seg);
+      return {
+        x: pts.map(r => r.recency),
+        y: pts.map(r => r.monetary),
+        text: pts.map(r => r.customer_id),
+        mode: 'markers', type: 'scatter', name: seg,
+        marker: {
+          size: pts.map(r => Math.max(4, Math.min(20, r.frequency * 3))),
+          color: SEG_COLORS[seg] || '#5a5f7a',
+          opacity: 0.75,
+          line: { width: 0 },
+        },
+      };
+    });
+    Plotly.react('chartRFM', scatTraces, layout({
+      xaxis: { title: { text: 'Recency (days)', font: { color: '#5a5f7a' } }, ...BASE_LAYOUT.xaxis },
+      yaxis: { title: { text: 'Monetary ($)',   font: { color: '#5a5f7a' } }, ...BASE_LAYOUT.yaxis },
+    }), PCONF);
+
+  } catch(e) {
+    toast('Segments load failed: ' + e.message, 'err');
+  }
+}
+
+// ── CHURN ─────────────────────────────────────────────────────────────
+async function loadChurn() {
+  try {
+    const [stats, rfm] = await Promise.all([
+      api('/segments/churn'),
+      api('/segments/rfm'),
+    ]);
+
+    // KPI cards
+    const rateColor = stats.churn_rate > 15 ? 'var(--danger)' : stats.churn_rate > 5 ? 'var(--warn)' : 'var(--accent)';
+    document.getElementById('churnKpis').innerHTML = `
+      <div class="kpi-card">
+        <div class="kpi-label">Churn Rate</div>
+        <div class="kpi-value" style="color:${rateColor}">${stats.churn_rate?.toFixed(1)}%</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Churned</div>
+        <div class="kpi-value">${fmtN(stats.churned_count)}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">At Risk</div>
+        <div class="kpi-value" style="color:var(--warn)">${fmtN(stats.at_risk_count)}</div>
+      </div>
+    `;
+
+    const hasScore = rfm.length && 'churn_score' in rfm[0];
+
+    if (hasScore) {
+      // Histogram
+      Plotly.react('chartChurnHist', [{
+        x: rfm.map(r => r.churn_score),
+        type: 'histogram', nbinsx: 20,
+        marker: { color: '#f87171', opacity: 0.8 },
+      }], layout({ margin: { t:10, r:10, b:40, l:50 } }), PCONF);
+    }
+
+    // Risk pie
+    const safe     = rfm.filter(r => (r.churn_score ?? 0) < 0.3).length;
+    const atRisk   = rfm.filter(r => (r.churn_score ?? 0) >= 0.3 && (r.churn_score ?? 0) < 0.5).length;
+    const churned  = rfm.filter(r => (r.churn_score ?? 0) >= 0.5).length;
+    Plotly.react('chartChurnPie', [{
+      values: [safe, atRisk, churned],
+      labels: ['Safe', 'At Risk', 'Churned'],
+      type: 'pie', hole: 0.45,
+      marker: { colors: ['#6ee7b7', '#fbbf24', '#f87171'] },
+      textfont: { color: '#e4e6f0', size: 11 },
+    }], layout({ margin: { t:10, r:10, b:10, l:10 } }), PCONF);
+
+    // High risk table
+    const highRisk = rfm
+      .filter(r => (r.churn_score ?? 0) >= 0.4)
+      .sort((a, b) => (b.churn_score ?? 0) - (a.churn_score ?? 0))
+      .slice(0, 30);
+
+    document.getElementById('churnTable').innerHTML = highRisk.map(r => `
+      <tr>
+        <td class="mono">${r.customer_id}</td>
+        <td>${r.recency}</td>
+        <td>${r.frequency}</td>
+        <td>${fmt(r.monetary)}</td>
+        <td style="color:${(r.churn_score ?? 0) > 0.7 ? 'var(--danger)' : 'var(--warn)'}">
+          ${((r.churn_score ?? 0) * 100).toFixed(0)}%
+        </td>
+        <td><span class="badge ${SEG_BADGE[r.segment] || ''}">${r.segment ?? '—'}</span></td>
+      </tr>
+    `).join('');
+
+  } catch(e) {
+    toast('Churn load failed: ' + e.message, 'err');
+  }
+}
+
+// ── INSIGHTS ──────────────────────────────────────────────────────────
+async function loadInsights() {
+  try {
+    const [insights, alerts] = await Promise.all([
+      api('/insights/?limit=20'),
+      api('/alerts/?unread_only=false'),
+    ]);
+    renderInsights(insights);
+    renderAlerts(alerts);
+  } catch(e) {
+    toast('Insights load failed: ' + e.message, 'err');
+  }
+}
+
+function renderInsights(insights) {
+  const icons = { critical: '🔴', warning: '🟡', info: '🟢' };
+  document.getElementById('insightList').innerHTML = insights.length
+    ? insights.map(i => `
+        <div class="insight-card ${i.severity}">
+          <div class="insight-icon">${icons[i.severity] ?? '⚪'}</div>
+          <div>
+            <div class="insight-title">${i.title}</div>
+            <div class="insight-body">${i.body}</div>
+          </div>
+          <span class="badge badge-${i.severity}" style="margin-left:auto;flex-shrink:0">${i.severity}</span>
+        </div>
+      `).join('')
+    : '<p style="color:var(--muted);font-size:0.82rem">No insights yet. Click Regenerate.</p>';
+}
+
+function renderAlerts(alerts) {
+  document.getElementById('alertList').innerHTML = alerts.length
+    ? alerts.map(a => `
+        <div class="alert-banner ${a.alert_type.includes('churn') ? 'critical' : 'warning'}">
+          <span>${a.alert_type.includes('churn') ? '🔴' : '🟡'}</span>
+          <div class="alert-msg">
+            <div class="alert-type">${a.alert_type.replace(/_/g,' ')}</div>
+            <div style="font-size:0.78rem;color:var(--muted);margin-top:2px">${a.message}</div>
+          </div>
+        </div>
+      `).join('')
+    : '<p style="color:var(--accent);font-size:0.82rem">✓ No active alerts.</p>';
+}
+
+async function regenerateInsights() {
+  try {
+    const res = await apiPost('/insights/generate');
+    toast(`Generated ${res.generated} insights`, 'ok');
+    loadInsights();
+  } catch(e) { toast('Failed: ' + e.message, 'err'); }
+}
+
+async function checkAlerts() {
+  try {
+    const res = await apiPost('/alerts/check');
+    toast(`${res.alerts_fired} alerts fired`, 'ok');
+    loadInsights();
+  } catch(e) { toast('Failed: ' + e.message, 'err'); }
+}
+
+// ── BASKET ────────────────────────────────────────────────────────────
+async function loadBasket() {
+  try {
+    const rules = await api('/segments/rfm'); // placeholder — basket is a local compute
+    // Actually call the basket via a small proxy trick or show a note
+    document.getElementById('chartBasket').innerHTML =
+      '<p style="color:var(--muted);padding:40px 20px;text-align:center;font-size:0.82rem">' +
+      'Basket analysis runs server-side. Run the pipeline first, then results appear here.</p>';
+    document.getElementById('basketTable').innerHTML = '';
+  } catch(e) {}
+  // Try to load via a direct basket endpoint if you add one
+}
+
+// ── ETL ────────────────────────────────────────────────────────────────
+let uploadedFile = null;
+
+function handleFileSelect(input) {
+  if (input.files[0]) {
+    uploadedFile = input.files[0];
+    document.getElementById('uploadedFileName').textContent = '✓ ' + uploadedFile.name;
+    saveFileToServer(uploadedFile);
+  }
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('uploadZone').classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) {
+    uploadedFile = file;
+    document.getElementById('uploadedFileName').textContent = '✓ ' + file.name;
+    saveFileToServer(file);
+  }
+}
+
+async function saveFileToServer(file) {
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const r = await fetch(API + '/etl/upload', { method: 'POST', body: form });
+    if (r.ok) {
+      log(`✓ Uploaded: ${file.name}`, 'ok');
+    } else {
+      log(`Upload endpoint not available — place file manually in data/raw/`, 'warn');
+    }
+  } catch {
+    log(`ℹ Place "${file.name}" manually into your data/raw/ folder, then run the pipeline.`, 'warn');
+  }
+}
+
+async function runPipeline() {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⟳ Running…';
+  log('▶ Starting pipeline…');
+  try {
+    const r = await fetch(API + '/etl/run', { method: 'POST' });
+    if (r.ok) {
+      const data = await r.json();
+      log(`✓ Ingested: ${data.ingested?.join(', ') || 'none'}`, 'ok');
+      if (data.errors?.length) {
+        data.errors.forEach(e => log(`✗ ${e.file}: ${e.error || e.hint || JSON.stringify(e)}`, 'err'));
+      }
+      // Refresh all dashboard sections with new data
+      setTimeout(() => refreshAllPages(), 500);
+    } else {
+      // Fallback message if ETL route isn't on the API yet
+      log('Pipeline endpoint not found — run via terminal: python -c "from app.etl.ingest import ingest_all; print(ingest_all())"', 'warn');
+    }
+  } catch {
+    log('ℹ API pipeline endpoint not available. Run in terminal:', 'warn');
+    log('python -c "from app.etl.ingest import ingest_all; print(ingest_all())"');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Run Full Pipeline';
+    log('— Done —');
+  }
+}
+
+async function generateSample() {
+  log('Generating sample data…');
+  try {
+    const r = await fetch(API + '/etl/generate-sample', { method: 'POST' });
+    if (r.ok) {
+      log('✓ Sample data generated', 'ok');
+      setTimeout(() => refreshAllPages(), 500);
+    } else {
+      log('ℹ Run in terminal: python -c "from app.etl.ingest import generate_sample_data, ingest_all; generate_sample_data(); ingest_all()"', 'warn');
+    }
+  } catch {
+    log('ℹ Run in terminal: python -c "from app.etl.ingest import generate_sample_data, ingest_all; generate_sample_data(); ingest_all()"', 'warn');
+  }
+}
+
+// ── Boot ───────────────────────────────────────────────────────────────
+(async () => {
+  await checkApiStatus();
+  loadOverview();
+  pageLoaded['overview'] = true;
+  setInterval(checkApiStatus, 30000);
+})();
+</script>
+</body>
+</html>

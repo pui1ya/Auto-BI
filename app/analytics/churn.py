@@ -1,87 +1,97 @@
-#to identify which customers are about to churn 
-#no need for a different customer churn analysis project 🗿
-
+"""
+Churn prediction using a simple Random Forest on RFM features.
+Also updates the customers table with churn scores.
+"""
 import pandas as pd
-
-class ChurnAnalyzer:
-
-    def __init__(self, customer_kpis, loyalty_df, rfm_df):
-        self.df = (
-            customer_kpis
-            .merge(loyalty_df, on="customer_id", how="inner")
-            .merge(rfm_df, on="customer_id", how="inner")
-        )
-
-    def compute_churn_flags(self):
-        self.df["churn_risk"] = "Low"
-
-        self.df.loc[
-            self.df["recency"] > 90,
-            "churn_risk"
-        ] = "High"
-
-        self.df.loc[
-            (self.df["recency"] > 60) &
-            (self.df["total_profit"] < self.df["total_profit"].quantile(0.25)),
-            "churn_risk"
-        ] = "High"
-
-        self.df.loc[
-            self.df["total_discount"] > 0.3,
-            "churn_risk"
-        ] = "Medium"
-
-        return self.df[[
-            "customer_id",
-            "segment",
-            "recency",
-            "total_profit",
-            "total_discount",
-            "churn_risk"
-        ]]
-
-    def churn_summary(self):
-        return (
-            self.df
-            .groupby("churn_risk")
-            .size()
-            .reset_index(name="customers")
-        )
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from app.analytics.segmentation import compute_rfm
+from app.core.database import sync_engine
+from app.models.schemas import Customer
+from sqlalchemy.orm import Session
 
 
-if __name__ == "__main__":
-    from app.etl.transform import table_builder
-    from app.etl.clean import clean_raw_data
-    from app.etl.ingest import ingest_csv
-    from app.analytics.kpi import ComputeCustomerKpis
-    from app.analytics.segmentation import CustomerSegmentation
+CHURN_RECENCY_THRESHOLD = 60  # days inactive = churned for training labels
 
-    df = '/Users/punyashrees/Documents/projects/auto-bi/Sample - Superstore.csv'
 
-    ingest = ingest_csv(df)
-    clean = clean_raw_data(ingest)
-    builder = table_builder(clean)
-    customers = builder.build_customers_table()
-    transactions = builder.build_transactions_table()
-    orders = builder.build_orders_table()
+def build_churn_model(rfm: pd.DataFrame = None):
+    if rfm is None:
+        rfm = compute_rfm()
+    if rfm.empty or len(rfm) < 20:
+        return None, None
 
-    kpis = ComputeCustomerKpis(
-        customers=customers,
-        transactions=transactions,
-        orders=orders
-    )
+    features = ["recency", "frequency", "monetary"]
+    rfm = rfm.dropna(subset=features)
 
-    sales_profit_df = kpis.sales_profit()
-    loyalty_df = kpis.loyalty_and_engagement()
+    # Label: churned if recency > threshold and frequency == 1
+    rfm["churn_label"] = (
+        (rfm["recency"] > CHURN_RECENCY_THRESHOLD) & (rfm["frequency"] <= 1)
+    ).astype(int)
 
-    print(sales_profit_df.columns)
+    X = rfm[features].values
+    y = rfm["churn_label"].values
 
-    segmentation = CustomerSegmentation(
-        customer_kpis=sales_profit_df,
-        loyalty_df=loyalty_df
-    )
+    if y.sum() == 0 or y.sum() == len(y):
+        # All same class — can't train, fall back to rule-based scores
+        rfm["churn_score"] = (rfm["churn_label"].astype(float) * 0.8 +
+                               (rfm["recency"] / rfm["recency"].max()) * 0.2).round(4)
+        rfm["churned"] = rfm["churn_label"].astype(bool)
+        return None, rfm
 
-    rfm_df = segmentation.rfm_segmentation()
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
 
-    churn = ChurnAnalyzer(customer_kpis=sales_profit_df, loyalty_df=loyalty_df, rfm_df=rfm_df)
-    print(churn.compute_churn_flags())
+    clf = RandomForestClassifier(n_estimators=50, random_state=42)
+    clf.fit(X_scaled, y)
+
+    rfm["churn_score"] = clf.predict_proba(X_scaled)[:, 1].round(4)
+    rfm["churned"] = (rfm["churn_score"] > 0.5).astype(bool)
+    return clf, rfm
+
+
+def update_customer_churn_scores():
+    _, rfm = build_churn_model()
+    if rfm is None:
+        return
+
+    with Session(sync_engine) as session:
+        for _, row in rfm.iterrows():
+            cust = session.query(Customer).filter_by(customer_id=row["customer_id"]).first()
+            if cust:
+                cust.churn_score = float(row.get("churn_score", 0))
+                cust.churned = bool(row.get("churned", False))
+            else:
+                c = Customer(
+                    customer_id=row["customer_id"],
+                    churn_score=float(row.get("churn_score", 0)),
+                    churned=bool(row.get("churned", False)),
+                    total_orders=int(row["frequency"]),
+                    lifetime_value=float(row["monetary"]),
+                    segment=str(row.get("segment", "Unknown")),
+                )
+                session.add(c)
+        session.commit()
+
+
+def churn_summary() -> dict:
+    _, rfm = build_churn_model()
+    if rfm is None or rfm.empty:
+        return {"churn_rate": 0, "at_risk_count": 0, "churned_count": 0, "total_customers": 0}
+
+    # Ensure columns exist with safe defaults
+    if "churned" not in rfm.columns:
+        rfm["churned"] = False
+    if "churn_score" not in rfm.columns:
+        rfm["churn_score"] = 0.0
+
+    churned_count = int(rfm["churned"].sum())
+    at_risk = int(((rfm["churn_score"] >= 0.3) & (rfm["churn_score"] < 0.5)).sum())
+    churn_rate = round(churned_count / len(rfm) * 100, 2) if len(rfm) else 0
+    return {
+        "churn_rate": churn_rate,
+        "at_risk_count": at_risk,
+        "churned_count": churned_count,
+        "total_customers": len(rfm),
+    }

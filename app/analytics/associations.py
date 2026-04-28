@@ -1,142 +1,40 @@
-#basically to group the products customers will obviously buy (recommendation system haha) ✋😆
-
-#takes transactions and products table 
-
+"""
+Market basket analysis – find products/categories frequently bought together.
+Uses the Apriori algorithm from mlxtend.
+"""
 import pandas as pd
-import numpy as np
+from app.analytics.kpi import load_transactions
 
-def build_basket(transactions):
-    return transactions[['order_id', 'product_id']]
-
-
-#to see how many times product has been bought
-def compute_product_appearance(basket):
-
-    total_orders = basket['order_id'].nunique()
-
-    support = (basket.groupby("product_id").agg(
-        order_count = ("order_id", "nunique")
-    ).reset_index())
-
-    support["support"] = (support['order_count']/total_orders)*10000
-
-    return support
+try:
+    from mlxtend.frequent_patterns import apriori, association_rules
+    from mlxtend.preprocessing import TransactionEncoder
+    MLXTEND_AVAILABLE = True
+except ImportError:
+    MLXTEND_AVAILABLE = False
 
 
-#generating product pairs
-def generate_product_pairs(basket):
+def basket_analysis(min_support: float = 0.02, min_lift: float = 1.0) -> pd.DataFrame:
+    if not MLXTEND_AVAILABLE:
+        return pd.DataFrame({"note": ["mlxtend not installed"]})
 
-    #to generate combination of products
-    pairs = (basket.merge(basket, on='order_id'))
-    pairs = pairs[pairs["product_id_x"] != pairs["product_id_y"]]
+    df = load_transactions()
+    if df.empty:
+        return pd.DataFrame()
 
-    return pairs[['order_id', 'product_id_x', 'product_id_y']]
+    # Build basket: each order = set of categories purchased
+    basket = df.groupby(["transaction_id", "category"])["quantity"].sum().unstack().fillna(0)
+    basket_bool = basket.map(lambda x: x > 0)
 
+    if basket_bool.shape[0] < 5:
+        return pd.DataFrame()
 
-#to compute most occuring product pairs
-def most_occuring_pairs(basket, pairs):
-    pairs_support = (pairs.groupby(['product_id_x', 'product_id_y']).agg(
-        pair_order = ("order_id", "nunique")
-    ).reset_index())
+    freq_items = apriori(basket_bool, min_support=min_support, use_colnames=True)
+    if freq_items.empty:
+        return pd.DataFrame()
 
-    total_orders = basket["order_id"].nunique()
-
-    pairs_support['support'] = (pairs_support['pair_order'] / total_orders)*10000
-
-    return pairs_support
-
-
-#now comes the confidence 🗿
-def compute_confidence(pairs_support, product):
-    df = pairs_support.merge(product[['product_id', 'order_count']], 
-                             left_on = 'product_id_x',
-                             right_on = 'product_id',
-                             how = "left")
-    
-    df['confidence'] = (df['pair_order']/df['order_count'])*100
-
-    return df
-
-
-def top_associations(df, min_support, min_confidence):
-    return (
-        df[
-            (df["support"] >= min_support) &
-            (df["confidence"] >= min_confidence)
-        ]
-        .sort_values(
-            ["confidence", "support"],
-            ascending=False
-        ).reset_index(drop=True)
-    )
-
-# for gods sake i'm doing soooooo wrong in this function. ig i'll just comment it out 🥹
-# def add_product_names(df, products):
-
-    # df = df.merge(
-    #     products[["product_id", "product_name"]],
-    #     left_on="product_id_x",
-    #     right_on="product_id",
-    #     how="left"
-    # )
-
-    # df = df.rename(columns={"product_name": "product_name_x"})
-    # df = df.drop(columns=["product_id"])
-
-    # df = df.merge(
-    #     products[["product_id", "product_name"]],
-    #     left_on="product_id_y",
-    #     right_on="product_id",
-    #     how="left"
-    # )
-
-    # df = df.rename(columns={"product_name": "product_name_y"})
-    # df = df.drop(columns=["product_id"])
-
-    # return df
-
-
-
-if __name__ == "__main__":
-    from app.etl.transform import table_builder
-    from app.etl.clean import clean_raw_data
-    from app.etl.ingest import ingest_csv
-
-    file = '/Users/punyashrees/Documents/projects/auto-bi/Sample - Superstore.csv'
-
-    ingest = ingest_csv(file)
-    clean = clean_raw_data(ingest)
-
-    builder = table_builder(clean)
-
-    transactions = builder.build_transactions_table()
-
-    basket = build_basket(transactions)
-
-    print("basket")
-    print(basket)
-
-    print("product appearances")
-    print(compute_product_appearance(basket))
-
-    print("product pairs")
-    print(generate_product_pairs(basket))
-
-    pairs = generate_product_pairs(basket)
-    print("most occuring pairs")
-    print(most_occuring_pairs(basket, pairs))
-
-    pairs_support = most_occuring_pairs(basket, pairs)
-    product = compute_product_appearance(basket)
-    print("compute confidence")
-    print(compute_confidence(pairs_support, product))
-
-    df = compute_confidence(pairs_support, product)
-    print("df with confidence")
-    print(df)
-
-    min_support = df["support"].quantile(0.95)
-    min_confidence = df["confidence"].quantile(0.9)
-
-    print(top_associations(df, min_support, min_confidence))
-
+    rules = association_rules(freq_items, metric="lift", min_threshold=min_lift)
+    rules = rules.sort_values("lift", ascending=False).head(20)
+    rules["antecedents"] = rules["antecedents"].apply(lambda x: ", ".join(list(x)))
+    rules["consequents"] = rules["consequents"].apply(lambda x: ", ".join(list(x)))
+    rules = rules[["antecedents", "consequents", "support", "confidence", "lift"]].round(4)
+    return rules.reset_index(drop=True)

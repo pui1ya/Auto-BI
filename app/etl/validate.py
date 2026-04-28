@@ -1,83 +1,44 @@
-'''
-The aim of this file is for value checking and performs the following functions:
-* raises error if dataset is empty
-* if a column has too many missing values then again raise error
-* if too many duplicates, raise an error
-* process certain values that has negative values which are not valid
-* to see atleast either of customer, order, product and transaction table are absent
-'''
-
+"""
+Validate cleaned dataframe before writing to DB.
+Returns (valid_df, list_of_error_strings).
+"""
 import pandas as pd
-from app.etl.required import get_columns
+from typing import Tuple, List
 
-def validate_raw_data(df):
-
-    #to see if the df is empty
-    if df.empty:
-        raise ValueError("dataset is empty")
-    
-
-    #checking for too many missing values in a column
-
-    for col in df.columns:
-        missing = df[col].isna().sum()
-        rows = len(df)
-                
-        missing_percent = (missing/rows)*100
-        if missing_percent > 40:
-            raise ValueError(f"{col} has {missing} missing rows")
-        
-    
-    #for checking duplicate rows
-
-    duplicates = df.duplicated().sum()
-    if duplicates > 0:
-        raise ValueError(f"dataset has {duplicates} duplicate rows")
+REQUIRED_COLUMNS = ["transaction_id", "customer_id", "revenue", "date", "quantity"]
+MIN_REVENUE = 0.01
+MAX_REVENUE = 1_000_000
 
 
-    #for checking columns with negative values
+def validate_transactions(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
+    errors: List[str] = []
+    df = df.copy()
 
-    for col in df.columns:
-        invalid_row = 0
-        if pd.api.types.is_numeric_dtype(df[col]):
-            if col == "profit":
-                continue
-            for val in df[col]:
-                if val < 0:
-                    invalid_row += 1
+    # Required columns present?
+    missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+    if missing:
+        errors.append(f"Missing required columns: {missing}")
+        return df, errors
 
-        if invalid_row > 0:
-            raise ValueError(f"{col} has {invalid_row} rows with negative values")
-        
+    # Revenue range
+    bad_rev = df[(df["revenue"] < MIN_REVENUE) | (df["revenue"] > MAX_REVENUE)]
+    if len(bad_rev):
+        errors.append(f"{len(bad_rev)} rows with revenue out of range [{MIN_REVENUE}, {MAX_REVENUE}]")
+        df = df[(df["revenue"] >= MIN_REVENUE) & (df["revenue"] <= MAX_REVENUE)]
 
-    #for checking if df has id of any sort (order id, customer id, transaction id, product id)
+    # Duplicate transaction IDs
+    dupes = df[df.duplicated("transaction_id", keep="first")]
+    if len(dupes):
+        errors.append(f"{len(dupes)} duplicate transaction_ids dropped")
+        df.drop_duplicates("transaction_id", keep="first", inplace=True)
 
-    df_cols = (df.columns
-               .str.lower()
-               .str.strip()
-               .str.replace(" ", "")
-               .str.replace("_", "")
-               .str.replace("-", ""))
-    
-    id_cols = {
-        "customer_id" : ["customer_id","customer", "customerid", "custid", "cust", "id", "client", "clientid", "customerid", "customerid"],
-        "product_id" : ["product_id","proid", "item", "itemid", "itemno", "productno", "productid"],
-        "order_id": ["order_id", "orderid", "ordernumber", "ordernum", "orderno"],
-        "transaction_id" : ["transaction_id", "transactionid", "transid"]
-    }
+    # Null dates after parse
+    null_dates = df["date"].isna().sum()
+    if null_dates:
+        errors.append(f"{null_dates} rows with unparseable dates dropped")
+        df.dropna(subset=["date"], inplace=True)
 
-    mapped_cols = get_columns(df, id_cols)
-
-    if len(mapped_cols) == 0:
-        raise ValueError(f"{id_cols.keys()} are not present in df")
-    
-    return True
-    
-
-
-if __name__ == "__main__":
-    df = pd.read_csv('/Users/punyashrees/Documents/projects/auto-bi/Computed insight - Success of active sellers.csv')
-    validate_raw_data(df)
+    return df.reset_index(drop=True), errors
 
     
 

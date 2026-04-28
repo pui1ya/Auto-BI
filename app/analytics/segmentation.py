@@ -1,90 +1,94 @@
-#for segmenting customers into champions based on their rfm factor
-#i did'nt know what rfm is but chatgpt told me to measure customers based on that
-#recency, frequeny and monetary
-
+"""
+RFM-based customer segmentation — robust to low-cardinality data.
+"""
 import pandas as pd
+import numpy as np
+from app.analytics.kpi import load_transactions
 
-class CustomerSegmentation:
 
-    def __init__(self, customer_kpis, loyalty_df):
-        self.df = customer_kpis.merge(
-            loyalty_df, on="customer_id", how="inner"
-        )
+def _safe_quartile_score(series: pd.Series, ascending: bool = True) -> pd.Series:
+    """Score a series 1-4. Falls back to rank percentile when qcut fails."""
+    n = series.nunique()
+    q = min(4, n)
 
-    def compute_rfm(self):
-        today = self.df["last_purchase_order"].max()
+    if q >= 2:
+        try:
+            labels = list(range(1, q + 1))
+            scored = pd.qcut(series, q=q, labels=labels, duplicates="drop").astype(float)
+            if q < 4:
+                scored = ((scored - 1) / (q - 1) * 3 + 1).round().clip(1, 4)
+            if not ascending:
+                scored = 5 - scored
+            return scored
+        except Exception:
+            pass
 
-        rfm = self.df[[
-            "customer_id",
-            "last_purchase_order",
-            "total_orders",
-            "total_sales"
-        ]].copy()  
+    # Fallback: percentile rank → 1-4
+    pct = series.rank(pct=True)
+    scored = (pct * 3.99).clip(1, 4).round().astype(float)
+    if not ascending:
+        scored = 5 - scored
+    return scored
 
-        rfm["recency"] = (today - rfm["last_purchase_order"]).dt.days
-        rfm["frequency"] = rfm["total_orders"]
-        rfm["monetary"] = rfm["total_sales"]
 
-        return rfm[["customer_id", "recency", "frequency", "monetary"]]
-    
-    def rfm_segmentation(self):
-        rfm = self.compute_rfm()
+def compute_rfm(df: pd.DataFrame = None) -> pd.DataFrame:
+    if df is None:
+        df = load_transactions()
+    if df.empty:
+        return pd.DataFrame()
 
-        rfm["segment"] = "Regular"
+    reference_date = df["date"].max() + pd.Timedelta(days=1)
 
-        rfm.loc[
-            (rfm["recency"] <= 30) &
-            (rfm["frequency"] >= 5) &
-            (rfm["monetary"] >= rfm["monetary"].quantile(0.75)),
-            "segment"
-        ] = "Champions"
+    rfm = df.groupby("customer_id").agg(
+        recency=("date", lambda x: (reference_date - x.max()).days),
+        frequency=("transaction_id", "count"),
+        monetary=("revenue", "sum"),
+    ).reset_index()
 
-        rfm.loc[
-            (rfm["recency"] > 90) &
-            (rfm["frequency"] <= 2),
-            "segment"
-        ] = "At Risk"
+    for col, ascending in [("recency", False), ("frequency", True), ("monetary", True)]:
+        rfm[f"{col[0]}_score"] = _safe_quartile_score(rfm[col], ascending=ascending)
 
-        rfm.loc[
-            rfm["frequency"] == 1,
-            "segment"
-        ] = "New Customers"
+    rfm["rfm_score"] = rfm["r_score"] + rfm["f_score"] + rfm["m_score"]
 
-        return rfm
+    score_min = rfm["rfm_score"].min()
+    score_max = rfm["rfm_score"].max()
 
-if __name__ == "__main__":
-    from app.etl.ingest import ingest_csv
-    from app.etl.clean import clean_raw_data
-    from app.etl.transform import table_builder
-    from app.analytics.kpi import ComputeCustomerKpis
-    from app.analytics.segmentation import CustomerSegmentation
+    if score_min == score_max:
+        rfm["segment"] = "Loyal Customers"
+    else:
+        span = score_max - score_min
+        bins = sorted(set([
+            score_min - 0.01,
+            score_min + span * 0.25,
+            score_min + span * 0.55,
+            score_min + span * 0.80,
+            score_max + 0.01,
+        ]))
+        if len(bins) < 5:
+            rfm["segment"] = "Loyal Customers"
+        else:
+            rfm["segment"] = pd.cut(
+                rfm["rfm_score"],
+                bins=bins,
+                labels=["Lost", "At Risk", "Loyal Customers", "Champions"],
+                right=True,
+            ).astype(str)
 
-    df = "/Users/punyashrees/Documents/projects/auto-bi/Sample - Superstore.csv"
+    rfm["segment"] = rfm["segment"].replace({"nan": "Loyal Customers", "": "Loyal Customers"})
+    rfm["monetary"] = rfm["monetary"].round(2)
+    return rfm
 
-    raw_df = ingest_csv(df)
-    clean_df = clean_raw_data(raw_df)
-    builder = table_builder(clean_df)
 
-    customers = builder.build_customers_table()
-    orders = builder.build_orders_table()
-    transactions = builder.build_transactions_table()
+def segment_summary(df: pd.DataFrame = None) -> pd.DataFrame:
+    rfm = compute_rfm(df)
+    if rfm.empty:
+        return pd.DataFrame()
 
-    customer_kpis = ComputeCustomerKpis(
-        customers=customers,
-        transactions=transactions,
-        orders=orders
-    )
-
-    sales_profit_df = customer_kpis.sales_profit()
-    loyalty_df = customer_kpis.loyalty_and_engagement()
-
-    segmentation = CustomerSegmentation(
-        customer_kpis=sales_profit_df,
-        loyalty_df=loyalty_df
-    )
-
-    rfm_df = segmentation.rfm_segmentation()
-
-    print("\nRFM Segmentation Sample:\n")
-    print(rfm_df.head())
-    print(rfm_df.columns)
+    summary = rfm.groupby("segment").agg(
+        customer_count=("customer_id", "count"),
+        avg_recency=("recency", "mean"),
+        avg_frequency=("frequency", "mean"),
+        avg_monetary=("monetary", "mean"),
+        total_revenue=("monetary", "sum"),
+    ).reset_index()
+    return summary.round(2)
